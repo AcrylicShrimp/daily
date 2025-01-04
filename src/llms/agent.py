@@ -12,7 +12,7 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from llms.agent_detail.prompts import SYSTEM_PROMPT, QUERY_PROMPT, CONTINUE_PROMPT
-from llms.agent_detail.tools import search_documents
+from llms.agent_detail.tools import search_documents, search_web
 
 
 class Agent:
@@ -22,6 +22,7 @@ class Agent:
         self.llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.4)
         self.llm = self.llm.bind_tools(
             [
+                search_web,
                 search_documents,
             ]
         )
@@ -50,15 +51,18 @@ class Agent:
         self.history.append(AIMessage(content="", tool_calls=tool_calls))
 
         for tool_call in tool_calls:
-            if tool_call["name"] == "search_documents":
-                documents = await search_documents.ainvoke(tool_call["args"])
-                result = {
-                    "documents": documents,
-                }
-            else:
+            tools = {
+                "search_web": search_web,
+                "search_documents": search_documents,
+            }
+            tool = tools.get(tool_call["name"])
+
+            if tool is None:
                 result = {
                     "error": f"invalid tool name {tool_call['name']}",
                 }
+            else:
+                result = await tool.ainvoke(tool_call["args"])
 
             self.history.append(
                 ToolMessage(

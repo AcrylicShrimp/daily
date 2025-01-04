@@ -1,12 +1,44 @@
 from langchain_core.tools import tool
+from langchain_community.tools import DuckDuckGoSearchResults
 
 from document_storage import DocumentStorage
 
+search = DuckDuckGoSearchResults(num_results=10, output_format="json")
 document_storage = DocumentStorage()
 
 
 @tool
-async def search_documents(query: str) -> list[str]:
+async def search_web(query: str) -> dict[str, any]:
+    """
+    Search the web for new information. It uses DuckDuckGo Search.
+
+    Args:
+        query: The query to search for.
+
+    Returns:
+        The documents that are relevant to the given query, from the web.
+
+    Note:
+        When providing a query, do not pass the original query. Instead, generate a refined query, following these guidelines:
+
+        1. Utilize the search engine's advanced search features to improve the search results
+        2. Identify and retain key concepts from the original query
+        3. Remove unnecessary words or phrases
+        4. Add relevant synonyms or related terms
+        5. Consider the context of the search (academic, technical, general, etc.)
+        6. Ensure the refined query is concise yet comprehensive
+        7. Always respond in English, even if the original query is non-English
+        8. Translate the query to English if necessary
+    """
+
+    return {
+        "query": query,
+        "result": await search.ainvoke(query),
+    }
+
+
+@tool
+async def search_documents(query: str) -> dict[str, any]:
     """
     Search for indexed documents that are relevant to the given query.
 
@@ -45,4 +77,15 @@ async def search_documents(query: str) -> list[str]:
         </examples>
     """
     docs = await document_storage.aquery(query)
-    return [doc.page_content.strip() for doc in docs]
+
+    if len(docs) == 0:
+        return {
+            "query": query,
+            "documents": [],
+            "warning": "no relevant documents found",
+        }
+
+    return {
+        "query": query,
+        "documents": [doc.page_content.strip() for doc in docs],
+    }
