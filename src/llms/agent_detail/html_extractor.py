@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup, Tag
 
 
 async def extract_html(url: str) -> str:
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(trust_env=True) as session:
         async with session.get(url) as response:
             if response.status // 100 != 2:
                 raise Exception(
