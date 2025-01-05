@@ -13,7 +13,7 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from llms.agent_detail.prompts import SYSTEM_PROMPT, QUERY_PROMPT, CONTINUE_PROMPT
-from llms.agent_detail.tools import search
+from llms.agent_detail.tools import search, index_urls
 
 
 class Agent:
@@ -21,11 +21,7 @@ class Agent:
         self.language = language
         self.history: list[BaseMessage] = []
         self.llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.4)
-        self.llm = self.llm.bind_tools(
-            [
-                search,
-            ]
-        )
+        self.llm = self.llm.bind_tools([search, index_urls])
         self.query_prompt = ChatPromptTemplate.from_messages(
             [
                 SYSTEM_PROMPT,
@@ -66,6 +62,7 @@ class Agent:
         for tool_call in tool_calls:
             tools = {
                 "search": search,
+                "index_urls": index_urls,
             }
             tool = tools.get(tool_call["name"])
 

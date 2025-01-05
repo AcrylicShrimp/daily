@@ -7,7 +7,12 @@ from bs4 import BeautifulSoup, Tag
 
 async def extract_html(url: str) -> str:
     async with aiohttp.ClientSession(trust_env=True) as session:
-        async with session.get(url) as response:
+        async with session.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            },
+        ) as response:
             if response.status // 100 != 2:
                 raise Exception(
                     f"failed to fetch `{url}` with status `{response.status}`"

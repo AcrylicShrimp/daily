@@ -110,6 +110,7 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
                     )
                     chunks = document_splitter.split_documents([document])
                     await document_storage.add_documents(chunks)
+
                 except:
                     pass
 
@@ -136,6 +137,58 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
 
     except Exception as e:
         print(f"[search] warning: failed to search `{query}`: {e}")
+
+        return {
+            "status": "error",
+            "cause": str(e),
+        }
+
+
+@tool
+async def index_urls(urls: list[str]) -> any:
+    """
+    Index the given URLs.
+
+    It is useful when user explicitly provides URLs to index, due to the fact that the web search is not always reliable.
+
+    Args:
+        urls: The URLs to index.
+
+    Returns:
+        It returns indexed urls or status and cause if it fails.
+    """
+    try:
+        now = datetime.now().isoformat()
+
+        async def process_url(url: str) -> str | None:
+            try:
+                content = await extract_html(url)
+
+                if content == "":
+                    return None
+
+                document = Document(
+                    page_content=content,
+                    metadata={
+                        "url": url,
+                        "timestamp": now,
+                    },
+                )
+                chunks = document_splitter.split_documents([document])
+                await document_storage.add_documents(chunks)
+
+                return url
+
+            except:
+                return None
+
+        indexed_urls = await asyncio.gather(*[process_url(url) for url in urls])
+        indexed_urls = [url for url in indexed_urls if url is not None]
+
+        return indexed_urls
+
+    except Exception as e:
+        print(f"[index_urls] warning: failed to index `{urls}`: {e}")
 
         return {
             "status": "error",
