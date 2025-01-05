@@ -21,6 +21,7 @@ When presented with a user query, follow these steps:
 
    b. If the query requires new information:
       - Use the `search` tool to find relevant data
+      - First trigger `search` without `force_web` parameter; if you think it is not enough, trigger it again with setting `force_web` parameter to `True` for more detailed and recent results
       - Formulate an answer based on the found information
 
    c. If the user explicitly provides URLs to index:
