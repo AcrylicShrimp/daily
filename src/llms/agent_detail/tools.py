@@ -10,8 +10,8 @@ from document_storage import DocumentStorage
 from llms.agent_detail.html_extractor import HtmlExtractor
 
 search = DuckDuckGoSearchResults(num_results=10, output_format="list")
-document_storage = DocumentStorage()
-document_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+document_storage = DocumentStorage(top_k_search=20, top_k_rerank=5)
+document_splitter = RecursiveCharacterTextSplitter(chunk_size=255, chunk_overlap=16)
 
 
 @tool
@@ -48,7 +48,13 @@ async def search_web(query: str) -> dict[str, any]:
         try:
             html_extractor = HtmlExtractor(result["url"])
             await html_extractor.fetch()
-            result["content"] = html_extractor.extract()
+            content = html_extractor.extract()
+
+            if content == "":
+                return None
+
+            result["content"] = content
+            return result
         except Exception as e:
             print(f"[search_web] warning: failed to fetch url `{result['url']}`: {e}")
             return None
@@ -154,6 +160,8 @@ async def index_documents(urls: list[str]) -> list[str]:
         )
         for url, content in processed
     ]
-    await document_storage.aadd_documents(chunks)
+    await document_storage.aadd_documents(
+        [chunk for chunks in chunks for chunk in chunks]
+    )
 
     return [url for url, _ in processed]

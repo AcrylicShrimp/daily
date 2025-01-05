@@ -1,4 +1,5 @@
 .vscode/
+chroma/
 venv/
 __pycache__/
 
