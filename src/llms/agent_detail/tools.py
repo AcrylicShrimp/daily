@@ -9,13 +9,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from document_storage import DocumentStorage
 from llms.agent_detail.html_extractor import extract_html
 
-web_search = DuckDuckGoSearchResults(num_results=10, output_format="list")
-document_storage = DocumentStorage(top_k_search=40, top_k_rerank=10)
-document_splitter = RecursiveCharacterTextSplitter(chunk_size=255, chunk_overlap=16)
+web_search = DuckDuckGoSearchResults(num_results=20, output_format="list")
+document_storage = DocumentStorage()
+document_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=128)
 
 
 @tool
-async def search(query: str, ignore_cache: bool = False) -> any:
+async def search(query: str, top_k: int, ignore_cache: bool = False) -> any:
     """
     Search for information relevant to the given query.
     Use this tool to search basis, documents, and web to answer questions of the user.
@@ -24,6 +24,7 @@ async def search(query: str, ignore_cache: bool = False) -> any:
 
     Args:
         query: The query to search for.
+        top_k: The number of documents to return. Use `5` or lower for easy, short answers. Use `10` or lower for more detailed answers. It will be clipped to `10` if it exceeds.
         ignore_cache: Whether to ignore the cache. If `True`, it will search the web always. Defaults to `False` (use cached documents first).
 
     Returns:
@@ -55,9 +56,10 @@ async def search(query: str, ignore_cache: bool = False) -> any:
         Do not use this tool multiple times with the same query in short time period, as it will be blocked by the server and/or just returns the same results.
     """
     try:
+        top_k = max(1, min(top_k, 10))
 
         async def search_cached_documents(query: str) -> list[Document]:
-            return [] if ignore_cache else await document_storage.aquery(query)
+            return [] if ignore_cache else await document_storage.query(query, top_k)
 
         async def search_web(query: str) -> list[dict]:
             results = await web_search.ainvoke(query)
@@ -121,13 +123,13 @@ async def search(query: str, ignore_cache: bool = False) -> any:
                     },
                 )
                 chunks = document_splitter.split_documents([document])
-                await document_storage.aadd_documents(chunks)
+                await document_storage.add_documents(chunks)
             except:
                 pass
 
         await asyncio.gather(*[process_web_result(result) for result in web_results])
 
-        documents = await document_storage.aquery(query)
+        documents = await document_storage.query(query, top_k)
 
         if 0 < len(documents):
             return {
@@ -144,6 +146,8 @@ async def search(query: str, ignore_cache: bool = False) -> any:
         }
 
     except Exception as e:
+        print(f"[search] warning: failed to search `{query}`: {e}")
+
         return {
             "status": "error",
             "cause": str(e),

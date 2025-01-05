@@ -3,6 +3,7 @@ from typing import Generator, TypedDict
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import (
+    BaseMessage,
     BaseMessageChunk,
     AIMessage,
     HumanMessage,
@@ -18,7 +19,7 @@ from llms.agent_detail.tools import search
 class Agent:
     def __init__(self, language: str = "en"):
         self.language = language
-        self.history = []
+        self.history: list[BaseMessage] = []
         self.llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0.4)
         self.llm = self.llm.bind_tools(
             [
@@ -44,6 +45,19 @@ class Agent:
         self,
         query: str,
     ) -> "AgentIterator":
+        while 10 < len(self.history):
+            index = -1
+
+            for i, message in enumerate(self.history):
+                if isinstance(message, AIMessage) and len(message.content) != 0:
+                    index = i
+                    break
+
+            if index == -1:
+                break
+
+            self.history = self.history[index + 1 :]
+
         return AgentIterator(self, query, self.language)
 
     async def handle_tool_calls(self, tool_calls: list[ToolCall]) -> "AgentIterator":
