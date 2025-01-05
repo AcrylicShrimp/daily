@@ -5,91 +5,85 @@ import math
 from bs4 import BeautifulSoup, Tag
 
 
-class HtmlExtractor:
-    def __init__(self, url: str):
-        self.url = url
-        self.soup = None
+async def extract_html(url: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status // 100 != 2:
+                raise Exception(
+                    f"failed to fetch `{url}` with status `{response.status}`"
+                )
 
-    async def fetch(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as response:
-                if response.status // 100 != 2:
-                    raise Exception(
-                        f"failed to fetch `{self.url}` with status `{response.status}`"
-                    )
+            text = await response.text()
+            soup = BeautifulSoup(text, "html.parser")
 
-                text = await response.text()
-                self.soup = BeautifulSoup(text, "html.parser")
+    body = soup.body
 
-    def extract(self) -> str:
-        body = self.soup.body
+    if body is None:
+        return ""
 
-        if body is None:
-            return ""
+    remove_html_tags(
+        body,
+        ["script", "style", "template", "header", "nav", "footer", "aside", "form"],
+    )
 
-        remove_html_tags(
-            body,
-            ["script", "style", "template", "header", "nav", "footer", "aside", "form"],
+    stats = compute_text_density(body)
+
+    # find maximum density sum tag
+    max_density_sum = max(stats.values(), key=lambda x: x["density_sum"])
+
+    # find minimum density in the path from the maximum density sum tag to the body
+    densities_in_path = []
+
+    if max_density_sum["tag"].name != "body":
+        for node in max_density_sum["tag"].parents:
+            densities_in_path.append(stats[id(node)]["density"])
+
+            if node.name == "body":
+                break
+
+    min_density = (
+        min(densities_in_path) if densities_in_path else stats[id(body)]["density"]
+    )
+
+    threshold = max(min_density, 1)
+    contents = set()
+
+    def extract_content(stat: TagStat):
+        if stat["density"] < threshold:
+            return
+
+        maximum = find_max_density_sum_tag(stat)
+        contents.add(id(maximum["tag"]))
+
+        if stat["tag"].string is not None:
+            return
+
+        for child in stat["tag"].children:
+            if child is not maximum["tag"]:
+                extract_content(stats[id(child)])
+
+    def find_max_density_sum_tag(stat: TagStat) -> TagStat:
+        if stat["tag"].string is not None:
+            return stat
+
+        element = max(
+            stat["tag"].children,
+            key=lambda x: stats[id(x)]["density_sum"],
         )
 
-        stats = compute_text_density(body)
+        if element is None:
+            return stat
 
-        # find maximum density sum tag
-        max_density_sum = max(stats.values(), key=lambda x: x["density_sum"])
+        return stats[id(element)]
 
-        # find minimum density in the path from the maximum density sum tag to the body
-        densities_in_path = []
+    extract_content(stats[id(body)])
 
-        if max_density_sum["tag"].name != "body":
-            for node in max_density_sum["tag"].parents:
-                densities_in_path.append(stats[id(node)]["density"])
+    tags = [stats[tag] for tag in contents]
+    tags.sort(key=lambda x: x["order"])
+    contents = [" ".join(tag["tag"].stripped_strings) for tag in tags]
+    content = " ".join(contents)
 
-                if node.name == "body":
-                    break
-
-        min_density = (
-            min(densities_in_path) if densities_in_path else stats[id(body)]["density"]
-        )
-
-        threshold = max(min_density, 1)
-        contents = set()
-
-        def extract_content(stat: TagStat):
-            if stat["density"] < threshold:
-                return
-
-            maximum = find_max_density_sum_tag(stat)
-            contents.add(id(maximum["tag"]))
-
-            if stat["tag"].string is not None:
-                return
-
-            for child in stat["tag"].children:
-                if child is not maximum["tag"]:
-                    extract_content(stats[id(child)])
-
-        def find_max_density_sum_tag(stat: TagStat) -> TagStat:
-            if stat["tag"].string is not None:
-                return stat
-
-            element = max(
-                stat["tag"].children,
-                key=lambda x: stats[id(x)]["density_sum"],
-            )
-
-            if element is None:
-                return stat
-
-            return stats[id(element)]
-
-        extract_content(stats[id(body)])
-
-        tags = [stats[tag] for tag in contents]
-        tags.sort(key=lambda x: x["order"])
-        contents = [" ".join(tag["tag"].stripped_strings) for tag in tags]
-        content = " ".join(contents)
-
-        return content
+    return content
 
 
 def remove_html_tags(dom: Tag, tags: list[str]):

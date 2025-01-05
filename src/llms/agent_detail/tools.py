@@ -7,84 +7,27 @@ from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from document_storage import DocumentStorage
-from llms.agent_detail.html_extractor import HtmlExtractor
+from llms.agent_detail.html_extractor import extract_html
 
-search = DuckDuckGoSearchResults(num_results=10, output_format="list")
-document_storage = DocumentStorage(top_k_search=20, top_k_rerank=5)
+web_search = DuckDuckGoSearchResults(num_results=10, output_format="list")
+document_storage = DocumentStorage(top_k_search=40, top_k_rerank=10)
 document_splitter = RecursiveCharacterTextSplitter(chunk_size=255, chunk_overlap=16)
 
 
 @tool
-async def search_web(query: str) -> dict[str, any]:
+async def search(query: str, ignore_cache: bool = False) -> any:
     """
-    Search the web for new information. It uses DuckDuckGo Search.
+    Search for information relevant to the given query.
+    Use this tool to search basis, documents, and web to answer questions of the user.
+
+    It will first search the cached documents. If there is no relevant information found, it will search the web and index the results before returning.
 
     Args:
         query: The query to search for.
+        ignore_cache: Whether to ignore the cache. If `True`, it will search the web always. Defaults to `False` (use cached documents first).
 
     Returns:
-        The documents that are relevant to the given query, from the web.
-
-    Note:
-        When providing a query, do not pass the original query. Instead, generate a refined query, following these guidelines:
-
-        1. Utilize the search engine's advanced search features to improve the search results
-        2. Identify and retain key concepts from the original query
-        3. Remove unnecessary words or phrases
-        4. Add relevant synonyms or related terms
-        5. Consider the context of the search (academic, technical, general, etc.)
-        6. Ensure the refined query is concise yet comprehensive
-        7. Always respond in English, even if the original query is non-English
-        8. Translate the query to English if necessary
-    """
-
-    results = await search.ainvoke(query)
-    results = [
-        {"title": result["title"], "snippet": result["snippet"], "url": result["link"]}
-        for result in results
-    ]
-
-    async def process_result(result: dict):
-        try:
-            html_extractor = HtmlExtractor(result["url"])
-            await html_extractor.fetch()
-            content = html_extractor.extract()
-
-            if content == "":
-                return None
-
-            result["content"] = content
-            return result
-        except Exception as e:
-            print(f"[search_web] warning: failed to fetch url `{result['url']}`: {e}")
-            return None
-
-    results = await asyncio.gather(*[process_result(result) for result in results])
-    results = [r for r in results if r is not None]
-
-    return {
-        "query": query,
-        "results": results,
-    }
-
-
-@tool
-async def search_documents(query: str) -> dict[str, any]:
-    """
-    Search for indexed documents that are relevant to the given query.
-
-    The search will be performed on the following document types:
-        - articles
-        - papers
-        - products
-        - reviews
-        - blogs
-
-    Args:
-        query: The query to search for.
-
-    Returns:
-        The documents that are relevant to the given query.
+        The information that is relevant to the given query.
 
     Note:
         When providing a query, do not pass the original query. Instead, generate a refined query, following these guidelines:
@@ -98,70 +41,110 @@ async def search_documents(query: str) -> dict[str, any]:
         7. Translate the query to English if necessary
 
         Here are some good examples (line-by-line):
-        <examples>
+
         - bidirectional type system definition features characteristics programming languages type checking inference static typing
         - christmas dinner recipes traditional holiday meals festive food menu cooking ideas winter dishes
         - mobile phone repair service screen damage fix smartphone repair shops service centers device repair locations
         - horror movies 2024 new releases scary films thriller recommendations recent horror cinema latest supernatural movies
         - unity game object destroy delete remove gameobject component destruction programmatically code implementation scripting
         - horror adult games dlsite recommendations eroge visual novel scary psychological thriller japanese indie games mature content
-        </examples>
-    """
-    docs = await document_storage.aquery(query)
+        - common cold symptoms flu symptoms cold vs flu natural remedies cold treatment flu treatment viral infections respiratory illnesses
+        - iPhone vs Samsung Galaxy comparison smartphone specs comparison mobile phone features comparison iPhone Samsung camera battery display
+        - cover letter writing tips no experience cover letter template entry-level cover letter job application cover letter writing advice how to write a cover letter
 
-    if len(docs) == 0:
+        Do not use this tool multiple times with the same query in short time period, as it will be blocked by the server and/or just returns the same results.
+    """
+    try:
+
+        async def search_cached_documents(query: str) -> list[Document]:
+            return [] if ignore_cache else await document_storage.aquery(query)
+
+        async def search_web(query: str) -> list[dict]:
+            results = await web_search.ainvoke(query)
+            return [
+                {
+                    "title": result["title"],
+                    "snippet": result["snippet"],
+                    "url": result["link"],
+                }
+                for result in results
+            ]
+
+        def serialize_documents(docs: list[Document]) -> dict:
+            return [
+                {
+                    "url": doc.metadata["url"],
+                    "title": doc.metadata["title"],
+                    "timestamp": doc.metadata["timestamp"],
+                    "content": doc.page_content,
+                }
+                for doc in docs
+            ]
+
+        documents, web_results = await asyncio.gather(
+            search_cached_documents(query),
+            search_web(query),
+        )
+
+        if 0 < len(documents):
+            return {
+                "query": query,
+                "origin": "cached-documents",
+                "documents": serialize_documents(documents),
+            }
+
+        if len(web_results) == 0:
+            return {
+                "query": query,
+                "origin": "web",
+                "documents": [],
+                "warning": "no relevant information found",
+            }
+
+        now = datetime.now().isoformat()
+
+        async def process_web_result(result: dict):
+            try:
+                content = await extract_html(result["url"])
+
+                if content == "":
+                    return
+
+                document = Document(
+                    page_content=content,
+                    metadata={
+                        "query": query,
+                        "title": result["title"],
+                        "snippet": result["snippet"],
+                        "url": result["url"],
+                        "timestamp": now,
+                    },
+                )
+                chunks = document_splitter.split_documents([document])
+                await document_storage.aadd_documents(chunks)
+            except:
+                pass
+
+        await asyncio.gather(*[process_web_result(result) for result in web_results])
+
+        documents = await document_storage.aquery(query)
+
+        if 0 < len(documents):
+            return {
+                "query": query,
+                "origin": "web",
+                "documents": serialize_documents(documents),
+            }
+
         return {
             "query": query,
+            "origin": "web",
             "documents": [],
-            "warning": "no relevant documents found",
+            "warning": "no relevant information found",
         }
 
-    return {
-        "query": query,
-        "documents": [
-            {"metadata": doc.metadata, "content": doc.page_content.strip()}
-            for doc in docs
-        ],
-    }
-
-
-@tool
-async def index_documents(urls: list[str]) -> list[str]:
-    """
-    Index the given HTML pages.
-
-    It will extract the content of the HTML pages and store them in the document storage.
-
-    Args:
-        urls: The URLs of the HTML pages to index.
-
-    Returns:
-        The URLs of the HTML pages that were successfully indexed.
-
-    Note:
-        It does not index raw HTML pages. Instead, it extracts the content of the HTML pages, using text density to figure out the most relevant content.
-    """
-
-    async def process_url(url: str):
-        try:
-            html_extractor = HtmlExtractor(url)
-            await html_extractor.fetch()
-            content = html_extractor.extract()
-            return url, content
-        except:
-            return None, None
-
-    processed = await asyncio.gather(*[process_url(url) for url in urls])
-    processed = [p for p in processed if p[0] is not None]
-
-    chunks = [
-        document_splitter.split_documents(
-            [Document(page_content=content, metadata={"url": url})]
-        )
-        for url, content in processed
-    ]
-    await document_storage.aadd_documents(
-        [chunk for chunks in chunks for chunk in chunks]
-    )
-
-    return [url for url, _ in processed]
+    except Exception as e:
+        return {
+            "status": "error",
+            "cause": str(e),
+        }
