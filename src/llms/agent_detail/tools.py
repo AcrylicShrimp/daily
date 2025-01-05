@@ -66,7 +66,6 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
             return [
                 {
                     "title": result["title"],
-                    "snippet": result["snippet"],
                     "url": result["link"],
                 }
                 for result in results
@@ -76,7 +75,7 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
             return [
                 {
                     "url": doc.metadata["url"],
-                    "title": doc.metadata["title"],
+                    "title": doc.metadata.get("title", "<no title>"),
                     "timestamp": doc.metadata["timestamp"],
                     "content": doc.page_content,
                 }
@@ -103,7 +102,6 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
                         metadata={
                             "query": query,
                             "title": result["title"],
-                            "snippet": result["snippet"],
                             "url": result["url"],
                             "timestamp": now,
                         },
