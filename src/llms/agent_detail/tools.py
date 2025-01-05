@@ -15,7 +15,7 @@ document_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overla
 
 
 @tool
-async def search(query: str, top_k: int, ignore_cache: bool = False) -> any:
+async def search(query: str, top_k: int, force_web: bool = False) -> any:
     """
     Search for information relevant to the given query.
     Use this tool to search basis, documents, and web to answer questions of the user.
@@ -25,7 +25,7 @@ async def search(query: str, top_k: int, ignore_cache: bool = False) -> any:
     Args:
         query: The query to search for.
         top_k: The number of documents to return. Use `5` or lower for easy, short answers. Use `10` or lower for more detailed answers. It will be clipped to `10` if it exceeds.
-        ignore_cache: Whether to ignore the cache. If `True`, it will search the web always. Defaults to `False` (use cached documents first).
+        force_web: An optional boolean flag to force the search to be performed on the web. Defaults to `False`. Set it to `True` if you want to search the web always, ignoring the pre-indexed documents.
 
     Returns:
         The information that is relevant to the given query.
@@ -59,7 +59,7 @@ async def search(query: str, top_k: int, ignore_cache: bool = False) -> any:
         top_k = max(1, min(top_k, 10))
 
         async def search_cached_documents(query: str) -> list[Document]:
-            return [] if ignore_cache else await document_storage.query(query, top_k)
+            return [] if force_web else await document_storage.query(query, top_k)
 
         async def search_web(query: str) -> list[dict]:
             results = await web_search.ainvoke(query)
@@ -88,61 +88,50 @@ async def search(query: str, top_k: int, ignore_cache: bool = False) -> any:
             search_web(query),
         )
 
-        if 0 < len(documents):
-            return {
-                "query": query,
-                "origin": "cached-documents",
-                "documents": serialize_documents(documents),
-            }
+        if len(documents) < top_k:
+            now = datetime.now().isoformat()
 
-        if len(web_results) == 0:
+            async def process_web_result(result: dict):
+                try:
+                    content = await extract_html(result["url"])
+
+                    if content == "":
+                        return
+
+                    document = Document(
+                        page_content=content,
+                        metadata={
+                            "query": query,
+                            "title": result["title"],
+                            "snippet": result["snippet"],
+                            "url": result["url"],
+                            "timestamp": now,
+                        },
+                    )
+                    chunks = document_splitter.split_documents([document])
+                    await document_storage.add_documents(chunks)
+                except:
+                    pass
+
+            await asyncio.gather(
+                *[process_web_result(result) for result in web_results]
+            )
+
+            extra_documents = await document_storage.query(
+                query, top_k - len(documents)
+            )
+            documents.extend(extra_documents)
+
+        if len(documents) == 0:
             return {
                 "query": query,
-                "origin": "web",
                 "documents": [],
                 "warning": "no relevant information found",
             }
 
-        now = datetime.now().isoformat()
-
-        async def process_web_result(result: dict):
-            try:
-                content = await extract_html(result["url"])
-
-                if content == "":
-                    return
-
-                document = Document(
-                    page_content=content,
-                    metadata={
-                        "query": query,
-                        "title": result["title"],
-                        "snippet": result["snippet"],
-                        "url": result["url"],
-                        "timestamp": now,
-                    },
-                )
-                chunks = document_splitter.split_documents([document])
-                await document_storage.add_documents(chunks)
-            except:
-                pass
-
-        await asyncio.gather(*[process_web_result(result) for result in web_results])
-
-        documents = await document_storage.query(query, top_k)
-
-        if 0 < len(documents):
-            return {
-                "query": query,
-                "origin": "web",
-                "documents": serialize_documents(documents),
-            }
-
         return {
             "query": query,
-            "origin": "web",
-            "documents": [],
-            "warning": "no relevant information found",
+            "documents": serialize_documents(documents),
         }
 
     except Exception as e:

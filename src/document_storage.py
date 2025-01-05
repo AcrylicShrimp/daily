@@ -21,9 +21,10 @@ class DocumentStorage:
     async def query(self, query: str, top_k: int) -> list[Document]:
         searched = await self.vector_store.asearch(
             query,
-            "similarity_score_threshold",
-            k=top_k * 5,
-            score_threshold=0.25,
+            "mmr",
+            k=top_k * 3,
+            fetch_k=top_k * 6,
+            lambda_mult=0.6,
         )
         reranked = await self.rerank.acompress_documents(searched, query)
 
