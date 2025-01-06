@@ -67,18 +67,20 @@ Respond in the preferred language of the user:
 <preferred_language>
 {language}
 </preferred_language>
+
+Do not answer to above request, because it is just a system request. Answer as you are answering to the user directly.
     """.strip(),
 )
 
 CONTINUE_PROMPT = (
     "human",
     """
-    Continue the conversation with following preferred language:
-    
-    <preferred_language>
-    {language}
-    </preferred_language>
+Continue the conversation with following preferred language:
 
-    Do not answer to above request, let's just continue.
+<preferred_language>
+{language}
+</preferred_language>
+
+Do not answer to above request, because it is just a system request. Answer as you are answering to the user directly.
     """.strip(),
 )

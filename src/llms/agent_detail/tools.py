@@ -27,7 +27,7 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
 
     Args:
         query: The query to search for.
-        top_k: The number of documents to return. Use `5` or lower for easy, short answers. Use `10` or lower for more detailed answers. It will be clipped to `10` if it exceeds.
+        top_k: The number of documents to return. Use `5` or lower for easy, short answers. Use `10` or lower for more detailed answers. Use `20` or lower for the most detailed answers. It will be clipped to `20` if it exceeds.
         force_web: An optional boolean flag to force the search to be performed on the web. Defaults to `False`. Set it to `True` if you want to search the web always, ignoring the pre-indexed documents.
 
     Returns:
@@ -41,10 +41,14 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
         3. Add relevant synonyms or related terms
         4. Consider the context of the search (academic, technical, general, etc.)
         5. Ensure the refined query is concise yet comprehensive
-        6. Always respond in English, even if the original query is non-English
-        7. Translate the query to English if necessary
 
-        Here are some good examples (line-by-line):
+        You should prefer English for the refined query, but:
+        - If the context is better in non-English, deduce the best language for the refined query and use it.
+        - For example, you might prefer to use Japanese for the refined query if the context is better in Japanese, e.g. when searching for Japanese anime.
+        - Or, you might prefer to use place names in native language, e.g. when searching for a specific location.
+        - Whatever the language you choose, translate the original query to it if necessary.
+
+        Here are some good examples (line-by-line, assume the current context is best in English):
 
         - bidirectional type system definition features characteristics programming languages type checking inference static typing
         - christmas dinner recipes traditional holiday meals festive food menu cooking ideas winter dishes
@@ -59,7 +63,7 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
         Do not use this tool multiple times with the same query in short time period, as it will be blocked by the server and/or just returns the same results.
     """
     try:
-        top_k = max(1, min(top_k, 10))
+        top_k = max(3, min(20, top_k))
 
         async def search_cached_documents(query: str) -> list[Document]:
             return [] if force_web else await document_storage.query(query, top_k)
@@ -202,7 +206,7 @@ def format_chunk(chunk: Document, now: str) -> Document:
         page_content="\n".join(
             [
                 "Metadata:",
-                json.dumps(minified_metadata, indent=2),
+                json.dumps(minified_metadata, indent=2, ensure_ascii=False),
                 "",
                 "Content:",
                 chunk.page_content,

@@ -76,7 +76,7 @@ class Agent:
             self.history.append(
                 ToolMessage(
                     tool_call_id=tool_call["id"],
-                    content=json.dumps(result),
+                    content=json.dumps(result, ensure_ascii=False),
                     status="error" if "error" in result else "success",
                 )
             )
