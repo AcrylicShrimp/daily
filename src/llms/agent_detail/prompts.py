@@ -78,5 +78,7 @@ CONTINUE_PROMPT = (
     <preferred_language>
     {language}
     </preferred_language>
+
+    Do not answer to above request, let's just continue.
     """.strip(),
 )

@@ -41,7 +41,7 @@ class Agent:
         self,
         query: str,
     ) -> "AgentIterator":
-        while 10 < len(self.history):
+        while 8 < len(self.history):
             index = -1
 
             for i, message in enumerate(self.history):

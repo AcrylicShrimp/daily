@@ -1,26 +1,13 @@
 from typing import TypedDict
-import aiohttp
 import math
 
 from bs4 import BeautifulSoup, Tag
 
+from llms.agent_detail.extract_html.utils import remove_html_tags
 
-async def extract_html(url: str) -> str:
-    async with aiohttp.ClientSession(trust_env=True) as session:
-        async with session.get(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-            },
-        ) as response:
-            if response.status // 100 != 2:
-                raise Exception(
-                    f"failed to fetch `{url}` with status `{response.status}`"
-                )
 
-            text = await response.text()
-            soup = BeautifulSoup(text, "html.parser")
-
+async def extract_html_content(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
     body = soup.body
 
     if body is None:
@@ -89,12 +76,6 @@ async def extract_html(url: str) -> str:
     content = " ".join(contents)
 
     return content
-
-
-def remove_html_tags(dom: Tag, tags: list[str]):
-    for tag in tags:
-        for node in dom.find_all(tag):
-            node.decompose()
 
 
 class TagStat(TypedDict):

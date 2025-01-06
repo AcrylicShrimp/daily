@@ -1,17 +1,20 @@
 import asyncio
 from datetime import datetime
+import json
 
 from langchain_core.documents import Document
 from langchain_core.tools import tool
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from document_storage import DocumentStorage
-from llms.agent_detail.html_extractor import extract_html
+from llms.agent_detail.extract_html.html_extractor import extract_html
 
 web_search = DuckDuckGoSearchResults(num_results=20, output_format="list")
 document_storage = DocumentStorage()
 document_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=128)
+llm = ChatOpenAI(model="gpt-4o-mini")
 
 
 @tool
@@ -61,28 +64,11 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
         async def search_cached_documents(query: str) -> list[Document]:
             return [] if force_web else await document_storage.query(query, top_k)
 
-        async def search_web(query: str) -> list[dict]:
+        async def search_web(query: str) -> list[str]:
             results = await web_search.ainvoke(query)
-            return [
-                {
-                    "title": result["title"],
-                    "url": result["link"],
-                }
-                for result in results
-            ]
+            return [result["link"] for result in results]
 
-        def serialize_documents(docs: list[Document]) -> dict:
-            return [
-                {
-                    "url": doc.metadata["url"],
-                    "title": doc.metadata.get("title", "<no title>"),
-                    "timestamp": doc.metadata["timestamp"],
-                    "content": doc.page_content,
-                }
-                for doc in docs
-            ]
-
-        documents, web_results = await asyncio.gather(
+        documents, urls = await asyncio.gather(
             search_cached_documents(query),
             search_web(query),
         )
@@ -90,31 +76,25 @@ async def search(query: str, top_k: int, force_web: bool = False) -> any:
         if len(documents) < top_k:
             now = datetime.now().isoformat()
 
-            async def process_web_result(result: dict):
+            async def process_web_result(url: str):
                 try:
-                    content = await extract_html(result["url"])
+                    content, metadata = await extract_html(url, llm)
 
                     if content == "":
                         return
 
                     document = Document(
                         page_content=content,
-                        metadata={
-                            "query": query,
-                            "title": result["title"],
-                            "url": result["url"],
-                            "timestamp": now,
-                        },
+                        metadata=metadata,
                     )
                     chunks = document_splitter.split_documents([document])
+                    chunks = [format_chunk(chunk, now) for chunk in chunks]
                     await document_storage.add_documents(chunks)
 
                 except:
                     pass
 
-            await asyncio.gather(
-                *[process_web_result(result) for result in web_results]
-            )
+            await asyncio.gather(*[process_web_result(url) for url in urls])
 
             extra_documents = await document_storage.query(
                 query, top_k - len(documents)
@@ -160,24 +140,26 @@ async def index_urls(urls: list[str]) -> any:
 
         async def process_url(url: str) -> str | None:
             try:
-                content = await extract_html(url)
+                content, metadata = await extract_html(url, llm)
 
                 if content == "":
+                    print(
+                        f"[index_urls] warning: failed to extract `{url}`: content is empty"
+                    )
                     return None
 
                 document = Document(
                     page_content=content,
-                    metadata={
-                        "url": url,
-                        "timestamp": now,
-                    },
+                    metadata=metadata,
                 )
                 chunks = document_splitter.split_documents([document])
+                chunks = [format_chunk(chunk, now) for chunk in chunks]
                 await document_storage.add_documents(chunks)
 
                 return url
 
-            except:
+            except Exception as e:
+                print(f"[index_urls] warning: failed to extract `{url}`: {e}")
                 return None
 
         indexed_urls = await asyncio.gather(*[process_url(url) for url in urls])
@@ -192,3 +174,42 @@ async def index_urls(urls: list[str]) -> any:
             "status": "error",
             "cause": str(e),
         }
+
+
+def serialize_documents(docs: list[Document]) -> list[dict]:
+    return [
+        {
+            "timestamp": doc.metadata["timestamp"],
+            "url": doc.metadata["url"],
+            "title": doc.metadata["title"],
+            "description": doc.metadata["description"],
+            "content": doc.page_content,
+        }
+        for doc in docs
+    ]
+
+
+def format_chunk(chunk: Document, now: str) -> Document:
+    minified_metadata = {
+        **chunk.metadata,
+    }
+
+    del minified_metadata["url"]
+    del minified_metadata["title"]
+    del minified_metadata["description"]
+
+    return Document(
+        page_content="\n".join(
+            [
+                "Metadata:",
+                json.dumps(minified_metadata, indent=2),
+                "",
+                "Content:",
+                chunk.page_content,
+            ]
+        ),
+        metadata={
+            "timestamp": now,
+            **chunk.metadata,
+        },
+    )

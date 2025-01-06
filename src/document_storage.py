@@ -22,8 +22,8 @@ class DocumentStorage:
         searched = await self.vector_store.asearch(
             query,
             "mmr",
-            k=top_k * 3,
-            fetch_k=top_k * 6,
+            k=min(10, top_k * 3),
+            fetch_k=min(40, top_k * 6),
             lambda_mult=0.6,
         )
         reranked = await self.rerank.acompress_documents(searched, query)
