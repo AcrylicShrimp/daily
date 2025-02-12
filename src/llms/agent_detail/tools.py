@@ -180,17 +180,8 @@ async def index_urls(urls: list[str]) -> any:
         }
 
 
-def serialize_documents(docs: list[Document]) -> list[dict]:
-    return [
-        {
-            "timestamp": doc.metadata["timestamp"],
-            "url": doc.metadata["url"],
-            "title": doc.metadata["title"],
-            "description": doc.metadata["description"],
-            "content": doc.page_content,
-        }
-        for doc in docs
-    ]
+def serialize_documents(docs: list[Document]) -> list[str]:
+    return [doc.page_content for doc in docs]
 
 
 def format_chunk(chunk: Document, now: str) -> Document:
@@ -202,9 +193,34 @@ def format_chunk(chunk: Document, now: str) -> Document:
     del minified_metadata["title"]
     del minified_metadata["description"]
 
+    url = chunk.metadata["url"]
+    title = chunk.metadata["title"]
+    description = chunk.metadata["description"]
+
+    if 1024 < len(url):
+        url = url[:1024]
+
+    if 1024 < len(title):
+        title = title[:1024]
+
+    if 1024 < len(description):
+        description = description[:1024]
+
     return Document(
         page_content="\n".join(
             [
+                "Timestamp:",
+                now,
+                "",
+                "Url:",
+                url,
+                "",
+                "Title:",
+                title,
+                "",
+                "Description:",
+                description,
+                "",
                 "Metadata:",
                 json.dumps(minified_metadata, indent=2, ensure_ascii=False),
                 "",

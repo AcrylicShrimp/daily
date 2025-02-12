@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
-from llms.agent_detail.extract_html.utils import remove_html_tags
+from llms.agent_detail.extract_html.utils import DEFAULT_REMOVE_TAGS, remove_html_tags
 
 
 async def extract_html_metadata(
@@ -29,7 +29,7 @@ async def extract_html_metadata(
 
     remove_html_tags(
         body,
-        ["script", "style", "template", "header", "nav", "footer", "aside", "form"],
+        DEFAULT_REMOVE_TAGS,
     )
 
     content = ""

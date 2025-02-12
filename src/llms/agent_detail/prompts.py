@@ -45,7 +45,7 @@ When presented with a user query, follow these steps:
 Here are some good answers:
 
 <examples>
-- I'm searching for `{query}`!
+- I'm searching for [Refined user query].
 - I've found some related documents. [Continues with the summary of the documents]
 - Unfortunately, I cannot find related documents. Do you want me to try different keywords?
 - I've indexed the following URLs: [Continues with the list of indexed URLs]

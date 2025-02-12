@@ -3,7 +3,7 @@ import math
 
 from bs4 import BeautifulSoup, Tag
 
-from llms.agent_detail.extract_html.utils import remove_html_tags
+from llms.agent_detail.extract_html.utils import DEFAULT_REMOVE_TAGS, remove_html_tags
 
 
 async def extract_html_content(html: str) -> str:
@@ -15,7 +15,7 @@ async def extract_html_content(html: str) -> str:
 
     remove_html_tags(
         body,
-        ["script", "style", "template", "header", "nav", "footer", "aside", "form"],
+        [DEFAULT_REMOVE_TAGS],
     )
 
     stats = compute_text_density(body)
